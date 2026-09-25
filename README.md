@@ -1,4 +1,5 @@
 # flarialPlus
 
-Search smali: Landroid/app/Application;
-Replace with: LaeeL/Loader;
+Search smali: .super Landroid/app/Application;
+
+Replace with: .super LaeeL/Loader;
