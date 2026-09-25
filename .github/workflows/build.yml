@@ -1,0 +1,121 @@
+name: build-dex
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'Hook.java'
+      - 'sign.dex'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  ANDROID_BUILD_TOOLS: 36.0.0
+  ANDROID_PLATFORM: android-36
+  PINE_VERSION: 0.3.0
+  MIN_SDK: 28
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'build-tools;${{ env.ANDROID_BUILD_TOOLS }} platforms;${{ env.ANDROID_PLATFORM }}'
+
+      - name: Cache Pine AAR
+        id: cache-pine
+        uses: actions/cache@v4
+        with:
+          path: build/pine.aar
+          key: pine-aar-${{ env.PINE_VERSION }}
+
+      - name: Unduh Pine AAR dari Maven Central
+        if: steps.cache-pine.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p build
+          curl -fsSL -o build/pine.aar \
+            "https://repo1.maven.org/maven2/top/canyie/pine/core/${PINE_VERSION}/core-${PINE_VERSION}.aar"
+
+      - name: Ekstrak Pine AAR
+        run: |
+          set -euo pipefail
+          mkdir -p build/pine
+          unzip -q build/pine.aar -d build/pine
+
+          echo "Isi AAR yang sudah diekstrak:"
+          find build/pine -maxdepth 2 -type f
+
+          test -f build/pine/classes.jar || { echo "::error::classes.jar tidak ditemukan di dalam AAR"; exit 1; }
+          ls -la build/pine/classes.jar
+
+      - name: Verifikasi sign.dex
+        run: |
+          test -f sign.dex || { echo "::error::sign.dex tidak ditemukan di root repo"; exit 1; }
+
+      - name: Kompilasi Hook.java
+        run: |
+          set -euo pipefail
+          mkdir -p build/classes
+          javac -source 8 -target 8 -nowarn \
+            -cp "build/pine/classes.jar:${ANDROID_HOME}/platforms/${ANDROID_PLATFORM}/android.jar" \
+            -d build/classes \
+            Hook.java
+
+      - name: Build dex dengan d8
+        run: |
+          set -euo pipefail
+          mkdir -p build/dex
+          "${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS}/d8" \
+            --lib "${ANDROID_HOME}/platforms/${ANDROID_PLATFORM}/android.jar" \
+            --min-api "${MIN_SDK}" \
+            --output build/dex \
+            build/pine/classes.jar \
+            sign.dex \
+            $(find build/classes -name "*.class")
+
+          ls -la build/dex/
+
+      - name: Susun folder output
+        run: |
+          set -euo pipefail
+          mkdir -p out/lib/arm64-v8a
+
+          cp build/dex/classes.dex out/classes4.dex
+
+          n=5
+          for f in build/dex/classes2.dex build/dex/classes3.dex build/dex/classes4.dex build/dex/classes5.dex; do
+            if [ -f "$f" ]; then
+              echo "::warning::d8 menghasilkan file dex tambahan: $f"
+              cp "$f" "out/classes${n}.dex"
+              n=$((n+1))
+            fi
+          done
+
+          cp build/pine/jni/arm64-v8a/libpine.so out/lib/arm64-v8a/
+
+          echo "Struktur akhir folder out:"
+          ls -laR out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aeel-dex
+          path: out/
+          if-no-files-found: error
+          retention-days: 7
