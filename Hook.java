@@ -10,8 +10,6 @@ import java.io.FileWriter;
 import java.io.PrintWriter;
 import java.lang.reflect.Method;
 import java.time.Instant;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Set;
 
 import top.canyie.pine.Pine;
@@ -23,17 +21,6 @@ public class Hook extends Application {
   private static final String DISCORD_ID = "123456789012345678";
   private static final String DISCORD_NAME = "aeeL.java";
   private static final String PREFS_NAME = "xyz.flarial.client_preferences";
-
-  private static final Map<String, Object> VALUES = new HashMap<>();
-  static {
-    VALUES.put("flarial_plus_active", true);
-    VALUES.put("flarial_plus_discord_username", DISCORD_NAME);
-    VALUES.put("flarial_plus_discord_id", DISCORD_ID);
-    VALUES.put("flarial_plus_discord_display_name", DISCORD_NAME);
-    VALUES.put("flarial_plus_tester_role_active", true);
-    VALUES.put("flarial_plus_discord_avatar_url", "");
-    VALUES.put("hook_by_aeeL", "t.me/navalabs");
-  }
 
   @Override public void attachBaseContext(Context base) {
     super.attachBaseContext(base); setupCrashHandler(this);
@@ -94,6 +81,8 @@ public class Hook extends Application {
       hookPut(editorImpl, "putFloat", float.class);
       hookPutSet(editorImpl, "putStringSet");
 
+      hookJson();
+
       Log.i(TAG, "Flarial successfully hooked!");
     } catch (Exception e) {
       Log.e(TAG, "Hook execution failed", e);
@@ -106,8 +95,8 @@ public class Hook extends Application {
       m.setAccessible(true);
       Pine.hook(m, new MethodHook() {
         @Override public void beforeCall(Pine.CallFrame cf) {
-          Object val = VALUES.get((String) cf.args[0]);
-          if (val != null && type.isInstance(val)) cf.setResult(val);
+          Object val = value(cf.args[0], type);
+          if (val != null) cf.setResult(val);
         }
       });
     } catch (Throwable e) {
@@ -121,8 +110,8 @@ public class Hook extends Application {
       m.setAccessible(true);
       Pine.hook(m, new MethodHook() {
         @Override public void beforeCall(Pine.CallFrame cf) {
-          Object val = VALUES.get((String) cf.args[0]);
-          if (val instanceof Set) cf.setResult(val);
+          Object val = value(cf.args[0], Set.class);
+          if (val != null) cf.setResult(val);
         }
       });
     } catch (Throwable e) {
@@ -136,8 +125,8 @@ public class Hook extends Application {
       m.setAccessible(true);
       Pine.hook(m, new MethodHook() {
         @Override public void beforeCall(Pine.CallFrame cf) {
-          Object val = VALUES.get((String) cf.args[0]);
-          if (val != null && type.isInstance(val)) cf.args[1] = val;
+          Object val = value(cf.args[0], type);
+          if (val != null) cf.args[1] = val;
         }
       });
     } catch (Throwable e) {
@@ -151,13 +140,59 @@ public class Hook extends Application {
       m.setAccessible(true);
       Pine.hook(m, new MethodHook() {
         @Override public void beforeCall(Pine.CallFrame cf) {
-          Object val = VALUES.get((String) cf.args[0]);
-          if (val instanceof Set) cf.args[1] = val;
+          Object val = value(cf.args[0], Set.class);
+          if (val != null) cf.args[1] = val;
         }
       });
     } catch (Throwable e) {
       Log.e(TAG, "Failed to hook " + name, e);
     }
+  }
+
+  private static void hookJson() {
+    try {
+      Class<?> json = Class.forName("org.json.JSONObject");
+
+      Method optBool = json.getDeclaredMethod("optBoolean", String.class, boolean.class);
+      optBool.setAccessible(true);
+      Pine.hook(optBool, new MethodHook() {
+        @Override public void beforeCall(Pine.CallFrame cf) {
+          String k = (String) cf.args[0];
+          if ("hasFlarialPlus".equals(k) || "hasTesterRole".equals(k))
+            cf.setResult(true);
+        }
+      });
+
+      Method optStr = json.getDeclaredMethod("optString", String.class, String.class);
+      optStr.setAccessible(true);
+      Pine.hook(optStr, new MethodHook() {
+        @Override public void beforeCall(Pine.CallFrame cf) {
+          String k = (String) cf.args[0];
+          if ("discordId".equals(k)) cf.setResult(DISCORD_ID);
+          else if ("username".equals(k)) cf.setResult(DISCORD_NAME);
+          else if ("displayName".equals(k)) cf.setResult(DISCORD_NAME);
+          else if ("avatar".equals(k)) cf.setResult("");
+        }
+      });
+    } catch (Throwable e) {
+      Log.e(TAG, "Failed to hook JSON", e);
+    }
+  }
+
+  private static Object value(Object key, Class<?> type) {
+    if (!(key instanceof String)) return null;
+    Object val;
+    switch ((String) key) {
+      case "flarial_plus_active": val = true; break;
+      case "flarial_plus_tester_role_active": val = true; break;
+      case "flarial_plus_discord_id": val = DISCORD_ID; break;
+      case "flarial_plus_discord_username": val = DISCORD_NAME; break;
+      case "flarial_plus_discord_display_name": val = DISCORD_NAME; break;
+      case "flarial_plus_discord_avatar_url": val = ""; break;
+      case "hook_by_aeeL": val = "t.me/navalabs"; break;
+      default: return null;
+    }
+    return type.isInstance(val) ? val : null;
   }
 
   private static void setupCrashHandler(final Context ctx) {
