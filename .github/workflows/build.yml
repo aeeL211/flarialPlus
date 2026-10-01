@@ -66,7 +66,7 @@ jobs:
       - name: Build dex dengan d8
         run: |
           set -euo pipefail
-          mkdir -p out/lib/arm64-v8a
+          mkdir -p build/dex out/lib/arm64-v8a
           "${ANDROID_HOME}/build-tools/${BUILD_TOOLS}/d8" \
             --lib "${ANDROID_HOME}/platforms/${PLATFORM}/android.jar" \
             --min-api "${MIN_SDK}" \
