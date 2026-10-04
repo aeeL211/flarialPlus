@@ -71,17 +71,22 @@ public class Hook extends Application {
 
   void hookJson() {
     try {
-      Constructor<JSONObject> ctor = JSONObject.class.getConstructor(String.class);
-      Pine.hook(ctor, new MethodHook() {
-        @Override public void beforeCall(Pine.CallFrame cf) {
-          Object arg = cf.args[0];
-          if (!(arg instanceof String)) return;
-          String json = (String) arg;
-          if (json.indexOf(KEY) < 0 || json.indexOf("\"sub\"") < 0) return;
-          String patched = json.replaceAll("\"entitlements\"\\s*:\\s*\\{[^}]*\\}", VAL);
-          cf.args[0] = patched.equals(json) ? json.replace(KEY + ":", VAL + ",") : patched;
-        }
-      });
+        Method getJsonObject = JSONObject.class.getMethod("getJSONObject", String.class);
+        Pine.hook(getJsonObject, new MethodHook() {
+            @Override public void afterCall(Pine.CallFrame cf) {
+                if (!(cf.args[0] instanceof String)) return;
+                if (!"entitlements".equals(cf.args[0])) return;
+
+                Object result = cf.getResult();
+                if (!(result instanceof JSONObject)) return;
+
+                JSONObject ent = (JSONObject) result;
+                try {
+                    ent.put("flarial_plus", true);
+                    ent.put("tester", true);
+                } catch (Throwable ignored) {}
+            }
+        });
     } catch (Throwable ignored) {}
   }
 
